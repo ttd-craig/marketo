@@ -1,0 +1,9 @@
+.eu .banner-sec{padding: 4% 0;}
+.eu .form-main{min-width: auto !important; max-width: 100% !important; width: 48%; }
+
+@media(max-width: 800px){
+.eu .form-main{min-width: auto !important; max-width: 100% !important; width: 44%; }
+}
+@media(max-width: 767px){
+.eu .form-main{min-width: auto !important; max-width: 100% !important; width: 100%; }	
+}

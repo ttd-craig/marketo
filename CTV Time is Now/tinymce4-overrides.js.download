@@ -1,0 +1,212 @@
+(function() {
+  if (!('tinymce' in window)) {
+    return;
+  }
+
+  tinymce.getGoogleFontsInContent = function() {
+    var googleFonts = MktPage.googleFontFamilies,
+        fontsUsed = [],
+        editor = tinymce.activeEditor,
+        elms;
+
+        if (!editor) {
+          return [];
+        }
+        elms = editor.$('[style]');
+
+        tinymce.each(elms, function(item) {
+          var families = item.style["font-family"].split(",");
+
+          tinymce.each(families, function(family) {
+            /* remove quotation marks and spaces from both ends, and ; from the end */
+            family = family.replace(/^[\s'";]+|[\s'";]+$/g, '');
+
+            if (googleFonts.indexOf(family) > -1) {
+              fontsUsed.push(family);
+            }
+          });
+        });
+
+        return fontsUsed;
+  }
+
+  /**
+   * override tinymce.ui.Window init() to put the primary button such as 'ok' to the right
+   */
+  var windowInitFn = tinymce.ui.Window.prototype.init;
+  tinymce.ui.Window.prototype.init = function (settings) {
+    var self = this;
+
+    if (settings.buttons.length > 1) {
+      var tempButtons = [],
+          primaryButtons = [],
+          each = tinymce.each;
+
+      each(settings.buttons, function(button) {
+        if (button.text == 'Close') {
+          button.text = "Cancel";
+        }
+
+        if (button.subtype == 'primary') {
+          if (button.text == 'Ok') {
+            button.text = "Apply";/* need to add an entry in language pack for 'Apply' to translate this text */
+          }
+
+          primaryButtons.push(button);
+        }
+        else {
+          tempButtons.push(button);
+        }
+      });
+
+
+      if (primaryButtons) {
+         tempButtons = tempButtons.concat(primaryButtons);
+      }
+
+      settings.buttons = tempButtons;
+    }
+    else if (settings.buttons.length == 1) {
+      if (settings.buttons[0].text == 'Close') {
+        settings.buttons[0].text = 'Cancel';
+      }
+    }
+
+    windowInitFn.apply(this, arguments);
+
+    self.on('click', function(e) {
+      if (e.target.className.indexOf(self.classPrefix + 'tool-maximize') != -1) {
+        self.maximize(true);
+        e.target.className = e.target.className.replace('-maximize', '-restore');
+      }
+      else if (e.target.className.indexOf(self.classPrefix + 'tool-restore') != -1) {
+        self.maximize(false);
+        e.target.className = e.target.className.replace('-restore', '-maximize');
+      }
+    });
+  };
+
+  /**
+   * override tinymce.ui.Container create() to support the hide/show more toolbars after the 'morebutton'
+   */
+  var containerCreateFn = tinymce.ui.Container.prototype.create;
+  tinymce.ui.Container.prototype.create = function(items) {
+    var ctrlItems = containerCreateFn.apply(this, arguments),
+        hideNextToolbar = false,
+        anItem,
+        i;
+
+    // scan each toolbar, hide the toolbar after the toolbar containing 'morebuttons'
+    for (i=0; i<ctrlItems.length; i++) {
+      if (anItem = ctrlItems[i]) {
+        if (hideNextToolbar && anItem.type == 'toolbar') {
+          anItem.hide();
+        }
+
+        if (anItem.type == 'toolbar' && anItem.items().length && anItem.items()[0].items()[0].settings.subtype == 'morebuttons') {
+          anItem.addClass('morebuttons-toolbar');
+          hideNextToolbar = true;
+        }
+      }
+    }
+
+    return ctrlItems;
+  };
+
+ /* fix the width issue of textbox in message box */
+  var textBoxRepaintFn = tinymce.ui.TextBox.prototype.repaint;
+  tinymce.ui.TextBox.prototype.repaint = function() {
+    this._layoutRect.w += 8;
+    var result = textBoxRepaintFn.apply(this, arguments);
+    this._layoutRect.w -= 8;
+    return result;
+  };
+
+  /* add window maximize and restore function */
+  tinymce.ui.Window.prototype.maximize = function(toMax) {
+    var self = this,
+        documentElement = document.documentElement,
+        DomUtils = tinymce.ui.DomUtils,
+        prefix = self.classPrefix,
+        layoutRect = self.layoutRect(),
+        rect;
+
+    if (!toMax) {
+        self._borderBox = self.parseBox(self.settings.border);
+        self.getEl('head').style.display = '';
+        self.moveTo(self._initial.x, self._initial.y).resizeTo(self._initial.w, self._initial.h);
+    } else {
+        self._initial = {
+          x: layoutRect.x,
+          y: layoutRect.y,
+          w: layoutRect.w,
+          h: layoutRect.h
+        };
+
+        self._borderBox = self.parseBox('0');
+
+        rect = DomUtils.getWindowSize();
+        self.moveTo(0, 0).resizeTo(rect.w, rect.h);
+    }
+
+    return self.reflow();
+  };
+
+
+  /** override Window.renderHtml. Add support of 'toolicon' setting.
+   *  If 'toolicon' is set, the maximize/restore button will show in the window title
+   */
+  tinymce.ui.Window.prototype.renderHtml = function() {
+    var self = this,
+        layout = self._layout,
+        id = self._id,
+        prefix = self.classPrefix,
+        settings = self.settings,
+        headerHtml = '',
+        footerHtml = '',
+        html = settings.html,
+        maxiconHtml = '';
+
+    self.preRender();
+    layout.preRender(self);
+
+    if (settings.title) {
+      maxiconHtml = settings.toolicon ? ('<button type="button" class="' + prefix + 'tool ' + prefix + 'tool-maximize" aria-hidden="true"></button>') : '';
+      headerHtml = (
+      '<div id="' + id + '-head" class="' + prefix + 'window-head">' +
+      '<div id="' + id + '-title" class="' + prefix + 'title">' + self.encode(settings.title) + '</div>' +
+      maxiconHtml +
+      '<button type="button" class="' + prefix + 'close" aria-hidden="true">\u00d7</button>' +
+      '<div id="' + id + '-dragh" class="' + prefix + 'dragh"></div>' +
+      '</div>'
+      );
+    }
+
+    if (settings.url) {
+      html = '<iframe src="' + settings.url + '" tabindex="-1"></iframe>';
+    }
+
+    if (typeof html == "undefined") {
+      html = layout.renderHtml(self);
+    }
+
+    if (self.statusbar) {
+      footerHtml = self.statusbar.renderHtml();
+    }
+
+    return (
+    '<div id="' + id + '" class="' + self.classes() + '" hidefocus="1">' +
+    '<div class="' + self.classPrefix + 'reset" role="application">' +
+    headerHtml +
+    '<div id="' + id + '-body" class="' + self.classes('body') + '">' +
+    html +
+    '</div>' +
+    footerHtml +
+    '</div>' +
+    '</div>'
+    );
+  };
+
+})();
+
+
